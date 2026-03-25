@@ -456,8 +456,8 @@ export class CommandBar {
     const added = cluster.addResource({
       kind,
       name,
-      metadata: { name, namespace: 'default', labels: {}, annotations: {} },
-      spec: kind === 'Deployment' ? { replicas: 1, strategy: { type: 'RollingUpdate' } } : kind === 'Node' ? { cpu: '4', memory: '8Gi' } : {},
+      metadata: { name, namespace: 'default', labels: { app: name }, annotations: {} },
+      spec: kind === 'Deployment' ? { replicas: 1, strategy: { type: 'RollingUpdate' }, selector: { matchLabels: { app: name } }, template: { metadata: { labels: { app: name } }, spec: { containers: [{ name: 'main', image: 'nginx:latest' }] } } } : kind === 'Node' ? { cpu: '4', memory: '8Gi' } : {},
       status: kind === 'Pod' ? { phase: 'Pending' } : kind === 'Node' ? { phase: 'Running' } : {}
     });
 
@@ -487,7 +487,7 @@ export class CommandBar {
 
     const defaults = {
       Pod: { spec: { containers: [{ name: 'main', image: 'nginx:latest' }] }, status: { phase: 'Pending' } },
-      Deployment: { spec: { replicas: 1, strategy: { type: 'RollingUpdate' } }, status: { readyReplicas: 0 } },
+      Deployment: { spec: { replicas: 1, strategy: { type: 'RollingUpdate' }, selector: { matchLabels: { app: name } }, template: { metadata: { labels: { app: name } }, spec: { containers: [{ name: 'main', image: 'nginx:latest' }] } } }, status: { readyReplicas: 0 } },
       Service: { spec: { type: 'ClusterIP', ports: [{ port: 80, targetPort: 80 }] }, status: {} },
       Namespace: { spec: {}, status: { phase: 'Active' } },
       Node: { spec: { cpu: '4', memory: '8Gi' }, status: { phase: 'Running' } },

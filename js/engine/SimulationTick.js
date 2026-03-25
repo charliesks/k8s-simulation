@@ -168,7 +168,8 @@ export class SimulationTick {
 
       const cpuScore = alloc.cpu.available / (alloc.cpu.capacity || 1);
       const memScore = alloc.memory.available / (alloc.memory.capacity || 1);
-      const score = (cpuScore + memScore) / 2;
+      const podCountPenalty = alloc.podCount * 0.05;
+      let score = (cpuScore + memScore) / 2 - podCountPenalty;
 
       if (pod.spec.affinity?.nodeAffinity?.preferredDuringScheduling) {
         const prefs = pod.spec.affinity.nodeAffinity.preferredDuringScheduling;
@@ -435,7 +436,23 @@ export class SimulationTick {
         .filter((rs) => rs.metadata.namespace === deploy.namespace);
 
       let currentRS = replicaSets[0];
-      if (!currentRS) continue;
+      if (!currentRS) {
+        const rsName = `${deploy.name}-${this._randomSuffix()}`;
+        const rs = new ResourceBase('ReplicaSet', 'apps/v1', rsName, deploy.namespace);
+        rs.spec = {
+          replicas: desiredReplicas,
+          selector: { matchLabels: selector },
+          template: deploy.spec.template || { spec: { containers: [{ name: 'main', image: 'app:latest' }] } },
+        };
+        for (const [k, v] of Object.entries(selector)) {
+          rs.setLabel(k, v);
+        }
+        rs.setLabel('pod-template-hash', this._randomSuffix());
+        rs.addOwnerReference(deploy);
+        this.cluster.add(rs);
+        this.cluster.addRelationship(deploy.uid, rs.uid);
+        currentRS = rs;
+      }
 
       const pods = this.cluster.getChildren(currentRS.uid)
         .filter((p) => p.kind === 'Pod');

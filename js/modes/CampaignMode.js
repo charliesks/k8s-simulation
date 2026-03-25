@@ -149,13 +149,14 @@ class CampaignMode {
 
     for (const resource of levelDef.startingResources) {
       const ns = resource.spec?.namespace || 'default';
+      const defaultLabels = { app: resource.name };
       const added = clusterState.addResource({
         kind: resource.kind,
         name: resource.name,
         metadata: {
           name: resource.name,
           namespace: ns,
-          labels: {}
+          labels: defaultLabels
         },
         spec: resource.spec || {},
         status: { phase: 'Running' }
@@ -163,6 +164,10 @@ class CampaignMode {
 
       if (resource.kind === 'Node' && added) {
         added.setCondition('Ready', 'True', 'KubeletReady');
+      }
+
+      if (resource.kind === 'Deployment' && added && !added.spec.selector) {
+        added.spec.selector = { matchLabels: defaultLabels };
       }
     }
   }
