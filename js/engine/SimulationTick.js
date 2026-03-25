@@ -4,6 +4,21 @@ export class SimulationTick {
   constructor(clusterState, eventBus) {
     this.cluster = clusterState;
     this.eventBus = eventBus;
+    this.cluster._evictedOwnerCounts = new Map();
+    this.cluster._rescheduledCount = 0;
+
+    if (eventBus) {
+      eventBus.on('cluster:deleted:Pod', (data) => {
+        const pod = data.resource;
+        if (pod && pod.metadata.ownerReferences.length > 0) {
+          const ownerKey = pod.metadata.ownerReferences[0]?.uid || pod.metadata.ownerReferences[0]?.name;
+          if (ownerKey) {
+            const map = this.cluster._evictedOwnerCounts;
+            map.set(ownerKey, (map.get(ownerKey) || 0) + 1);
+          }
+        }
+      });
+    }
     this.tickCount = 0;
     this.tickRate = 1;
     this.schedulerQueue = [];
@@ -122,6 +137,16 @@ export class SimulationTick {
         pod.setCondition('PodScheduled', 'True', 'Scheduled', `Successfully assigned to ${node.name}`);
         pod.setCondition('Initialized', 'True', 'PodInitialized');
         pod.setCondition('Ready', 'False', 'ContainersNotReady');
+
+        if (pod.metadata.ownerReferences.length > 0) {
+          const ownerKey = pod.metadata.ownerReferences[0]?.uid || pod.metadata.ownerReferences[0]?.name;
+          const evictedMap = this.cluster._evictedOwnerCounts;
+          if (evictedMap && ownerKey && evictedMap.get(ownerKey) > 0) {
+            this.cluster._rescheduledCount = (this.cluster._rescheduledCount || 0) + 1;
+            evictedMap.set(ownerKey, evictedMap.get(ownerKey) - 1);
+            if (evictedMap.get(ownerKey) <= 0) evictedMap.delete(ownerKey);
+          }
+        }
         pod.recordEvent('Normal', 'Scheduled', `Successfully assigned ${pod.namespace}/${pod.name} to ${node.name}`);
 
         this._initContainerStatuses(pod);
@@ -143,7 +168,7 @@ export class SimulationTick {
     const nodeSelector = pod.spec.nodeSelector || {};
 
     let bestNode = null;
-    let bestScore = -1;
+    let bestScore = -Infinity;
 
     for (const node of nodes) {
       if (!node.matchesSelector(nodeSelector)) continue;
@@ -164,7 +189,8 @@ export class SimulationTick {
 
       const cpuScore = alloc.cpu.available / (alloc.cpu.capacity || 1);
       const memScore = alloc.memory.available / (alloc.memory.capacity || 1);
-      const score = (cpuScore + memScore) / 2;
+      const podCountPenalty = alloc.podCount * 0.05;
+      let score = (cpuScore + memScore) / 2 - podCountPenalty;
 
       if (pod.spec.affinity?.nodeAffinity?.preferredDuringScheduling) {
         const prefs = pod.spec.affinity.nodeAffinity.preferredDuringScheduling;
@@ -431,7 +457,23 @@ export class SimulationTick {
         .filter((rs) => rs.metadata.namespace === deploy.namespace);
 
       let currentRS = replicaSets[0];
-      if (!currentRS) continue;
+      if (!currentRS) {
+        const rsName = `${deploy.name}-${this._randomSuffix()}`;
+        const rs = new ResourceBase('ReplicaSet', 'apps/v1', rsName, deploy.namespace);
+        rs.spec = {
+          replicas: desiredReplicas,
+          selector: { matchLabels: selector },
+          template: deploy.spec.template || { spec: { containers: [{ name: 'main', image: 'app:latest' }] } },
+        };
+        for (const [k, v] of Object.entries(selector)) {
+          rs.setLabel(k, v);
+        }
+        rs.setLabel('pod-template-hash', this._randomSuffix());
+        rs.addOwnerReference(deploy);
+        this.cluster.add(rs);
+        this.cluster.addRelationship(deploy.uid, rs.uid);
+        currentRS = rs;
+      }
 
       const pods = this.cluster.getChildren(currentRS.uid)
         .filter((p) => p.kind === 'Pod');
