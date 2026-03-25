@@ -4,6 +4,21 @@ export class SimulationTick {
   constructor(clusterState, eventBus) {
     this.cluster = clusterState;
     this.eventBus = eventBus;
+    this.cluster._evictedOwnerCounts = new Map();
+    this.cluster._rescheduledCount = 0;
+
+    if (eventBus) {
+      eventBus.on('cluster:deleted:Pod', (data) => {
+        const pod = data.resource;
+        if (pod && pod.metadata.ownerReferences.length > 0) {
+          const ownerKey = pod.metadata.ownerReferences[0]?.uid || pod.metadata.ownerReferences[0]?.name;
+          if (ownerKey) {
+            const map = this.cluster._evictedOwnerCounts;
+            map.set(ownerKey, (map.get(ownerKey) || 0) + 1);
+          }
+        }
+      });
+    }
     this.tickCount = 0;
     this.tickRate = 1;
     this.schedulerQueue = [];
@@ -124,7 +139,13 @@ export class SimulationTick {
         pod.setCondition('Ready', 'False', 'ContainersNotReady');
 
         if (pod.metadata.ownerReferences.length > 0) {
-          this.cluster._rescheduledCount = (this.cluster._rescheduledCount || 0) + 1;
+          const ownerKey = pod.metadata.ownerReferences[0]?.uid || pod.metadata.ownerReferences[0]?.name;
+          const evictedMap = this.cluster._evictedOwnerCounts;
+          if (evictedMap && ownerKey && evictedMap.get(ownerKey) > 0) {
+            this.cluster._rescheduledCount = (this.cluster._rescheduledCount || 0) + 1;
+            evictedMap.set(ownerKey, evictedMap.get(ownerKey) - 1);
+            if (evictedMap.get(ownerKey) <= 0) evictedMap.delete(ownerKey);
+          }
         }
         pod.recordEvent('Normal', 'Scheduled', `Successfully assigned ${pod.namespace}/${pod.name} to ${node.name}`);
 
@@ -147,7 +168,7 @@ export class SimulationTick {
     const nodeSelector = pod.spec.nodeSelector || {};
 
     let bestNode = null;
-    let bestScore = -1;
+    let bestScore = -Infinity;
 
     for (const node of nodes) {
       if (!node.matchesSelector(nodeSelector)) continue;

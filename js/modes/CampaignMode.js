@@ -156,7 +156,7 @@ class CampaignMode {
         metadata: {
           name: resource.name,
           namespace: ns,
-          labels: defaultLabels
+          labels: { ...defaultLabels }
         },
         spec: resource.spec || {},
         status: { phase: 'Running' }
@@ -167,7 +167,7 @@ class CampaignMode {
       }
 
       if (resource.kind === 'Deployment' && added && !added.spec.selector) {
-        added.spec.selector = { matchLabels: defaultLabels };
+        added.spec.selector = { matchLabels: { ...defaultLabels } };
       }
     }
   }
