@@ -1,0 +1,8 @@
+services:
+  k8s-games:
+    image: quay.io/REPLACE_ME/k8s-games:latest
+    container_name: k8s-games
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+
