@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: k8s-games
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: k8s.sarks.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: k8s-games
+                port:
+                  number: 80
+
+# If you use TLS, uncomment and provide your secret:
+#  tls:
+#    - hosts:
+#        - k8s.sarks.org
+#      secretName: k8s-sarks-tls
+

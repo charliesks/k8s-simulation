@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+.cursor
+terminals
+agent-transcripts
+*.log
+node_modules
+dist
+build
+.DS_Store
+

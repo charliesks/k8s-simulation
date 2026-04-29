@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-games
+  labels:
+    app: k8s-games
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k8s-games
+  template:
+    metadata:
+      labels:
+        app: k8s-games
+    spec:
+      containers:
+        - name: web
+          image: quay.io/REPLACE_ME/k8s-games:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+
